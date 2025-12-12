@@ -9,8 +9,9 @@ const CACHE_NAME = `konvo-cache-${CACHE_VERSION}`;
 const STATIC_ASSETS = [
   '/',
   '/index.html',
-  '/style.css',
-  '/icon.jpg'
+  '/dist/style.css',  // Updated path
+  '/icon.jpg',
+  '/app.js'
 ];
 
 // Security: Domains allowed for caching

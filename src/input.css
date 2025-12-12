@@ -51,6 +51,19 @@
   --z-tooltip: 1100;
 }
 
+/* Add after your :root section */
+html, body {
+  height: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  min-height: 100svh;
+}
+
+@supports (height: 100dvh) {
+  body {
+    height: 100dvh;
+  }
+}
 /* ============================
    PASTE THE REST OF YOUR style.css CONTENT HERE
    (Everything from section 2 onwards)

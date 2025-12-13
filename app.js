@@ -1,6 +1,6 @@
 // ============================================================
 // KONVO - ANONYMOUS CHAT APPLICATION
-// Version: 2.1 (Kebab Menu Fix)
+// Version: 2.2 (Security & Performance Fixes)
 // ============================================================
 'use strict';
 
@@ -12,7 +12,9 @@ import {
   onAuthStateChanged,
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import {
-  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
   collection,
   addDoc,
   onSnapshot,
@@ -30,7 +32,6 @@ import {
   writeBatch,
   arrayUnion,
   arrayRemove,
-  enableIndexedDbPersistence,
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 // ============================================================
@@ -101,12 +102,41 @@ function isValidProfilePhotoURL(url) {
   if (url.length > 500) return false;
   
   const allowedPatterns = [
-    /^https:\/\/placehold\.co\/.*/,
-    /^https:\/\/ui-avatars\.com\/.*/,
-    /^https:\/\/api\.dicebear\.com\/.*/,
+    /^https:\/\/placehold\.co\/.+$/,
+    /^https:\/\/ui-avatars\.com\/.+$/,
+    /^https:\/\/api\.dicebear\.com\/.+$/,
   ];
   
   return allowedPatterns.some(pattern => pattern.test(url));
+}
+
+/**
+ * Enhanced message validation before posting
+ * @param {string} text - Message text to validate
+ * @returns {Object} - Validation result with valid flag and error/text
+ */
+function validateMessageBeforePost(text) {
+  if (typeof text !== 'string') {
+    return { valid: false, error: "Invalid message format" };
+  }
+  
+  const trimmed = text.trim();
+  
+  if (trimmed.length === 0) {
+    return { valid: false, error: "Message cannot be empty" };
+  }
+  
+  if (trimmed.length > MESSAGE_MAX_LENGTH) {
+    return { valid: false, error: `Message too long (max ${MESSAGE_MAX_LENGTH} characters)` };
+  }
+  
+  // Check for control characters
+  const controlCharRegex = /[\x00-\x08\x0B\x0C\x0E-\x1F]/;
+  if (controlCharRegex.test(trimmed)) {
+    return { valid: false, error: "Message contains invalid characters" };
+  }
+  
+  return { valid: true, text: trimmed };
 }
 
 /**
@@ -172,6 +202,95 @@ function throttle(func, limit) {
 function escapeSelector(selector) {
   if (typeof selector !== 'string') return '';
   return CSS.escape(selector);
+}
+
+// ============================================================
+// SVG ICON CREATORS (XSS-Safe)
+// ============================================================
+
+/**
+ * Create notification bell icon (enabled state)
+ * @returns {SVGElement}
+ */
+function createEnabledBellIcon() {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("width", "18");
+  svg.setAttribute("height", "18");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "currentColor");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+
+  const path1 = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path1.setAttribute("d", "M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9");
+  
+  const path2 = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path2.setAttribute("d", "M13.73 21a2 2 0 0 1-3.46 0");
+
+  svg.appendChild(path1);
+  svg.appendChild(path2);
+  return svg;
+}
+
+/**
+ * Create notification bell icon (disabled state)
+ * @returns {SVGElement}
+ */
+function createDisabledBellIcon() {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("width", "18");
+  svg.setAttribute("height", "18");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+
+  const paths = [
+    "M13.73 21a2 2 0 0 1-3.46 0",
+    "M18.63 13A17.89 17.89 0 0 1 18 8",
+    "M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14",
+    "M18 8a6 6 0 0 0-9.33-5"
+  ];
+
+  paths.forEach(d => {
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", d);
+    svg.appendChild(path);
+  });
+
+  const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  line.setAttribute("x1", "1");
+  line.setAttribute("y1", "1");
+  line.setAttribute("x2", "23");
+  line.setAttribute("y2", "23");
+  svg.appendChild(line);
+
+  return svg;
+}
+
+/**
+ * Create kebab menu icon
+ * @returns {SVGElement}
+ */
+function createKebabIcon() {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("width", "14");
+  svg.setAttribute("height", "14");
+  svg.setAttribute("fill", "currentColor");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("aria-hidden", "true");
+
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", "M9.5 13a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm0-5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm0-5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z");
+  
+  svg.appendChild(path);
+  return svg;
 }
 
 // ============================================================
@@ -325,6 +444,12 @@ const state = {
   isBanned: false,
 };
 
+// Rate limit tracking
+const rateLimitState = {
+  lastMessageTime: 0,
+  isRateLimited: false
+};
+
 // Unsubscribe functions
 const unsubscribers = {
   confessions: () => {},
@@ -358,6 +483,7 @@ const MESSAGE_MAX_LENGTH = 2000;
 const USERNAME_MAX_LENGTH = 30;
 const TYPING_TIMEOUT = 3000;
 const RATE_LIMIT_MS = 2000;
+const TYPING_STALE_THRESHOLD = 5000;
 
 // ============================================================
 // UTILITY FUNCTIONS
@@ -387,18 +513,17 @@ function formatMessageTime(date) {
   if (!(date instanceof Date) || isNaN(date)) {
     return 'Just now';
   }
-  
   const diff = Date.now() - date.getTime();
   const seconds = Math.floor(diff / 1000);
   const minutes = Math.floor(seconds / 60);
-  
+
   if (minutes < 1) return "Just now";
   if (minutes < 5) return `${minutes} mins ago`;
-  
-  return date.toLocaleTimeString([], { 
-    hour: "2-digit", 
-    minute: "2-digit", 
-    hour12: false 
+
+  return date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
   });
 }
 
@@ -454,6 +579,22 @@ function createActionContainer() {
   return confirmModalActionContainer;
 }
 
+/**
+ * Clean up all Firebase listeners
+ */
+function cleanupAllListeners() {
+  Object.entries(unsubscribers).forEach(([key, unsub]) => {
+    if (typeof unsub === 'function') {
+      try {
+        unsub();
+        unsubscribers[key] = () => {};
+      } catch (e) {
+        console.warn(`Failed to unsubscribe ${key}:`, e);
+      }
+    }
+  });
+}
+
 // ============================================================
 // SERVICE WORKER REGISTRATION
 // ============================================================
@@ -481,6 +622,27 @@ function registerServiceWorker() {
       })
       .catch(err => console.error('SW registration failed:', err));
   }
+}
+
+// ============================================================
+// CONNECTION MONITORING
+// ============================================================
+
+/**
+ * Setup connection status monitoring
+ */
+function setupConnectionMonitor() {
+  window.addEventListener('online', () => {
+    console.log('Connection restored');
+    if (state.isInitialized) {
+      showPage(state.currentPage);
+    }
+  });
+
+  window.addEventListener('offline', () => {
+    console.log('Connection lost');
+    showToast("You're offline. Messages will sync when connected.", "info");
+  });
 }
 
 // ============================================================
@@ -540,32 +702,16 @@ async function handleNotificationClick(e) {
 function updateNotificationIcon() {
   if (!notificationButton) return;
   
-  const enabledIcon = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" 
-         fill="currentColor" stroke="currentColor" stroke-width="2" 
-         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
-      <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
-    </svg>`;
-  
-  const disabledIcon = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" 
-         fill="none" stroke="currentColor" stroke-width="2" 
-         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
-      <path d="M18.63 13A17.89 17.89 0 0 1 18 8"></path>
-      <path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14"></path>
-      <path d="M18 8a6 6 0 0 0-9.33-5"></path>
-      <line x1="1" y1="1" x2="23" y2="23"></line>
-    </svg>`;
+  // Clear existing content safely
+  notificationButton.innerHTML = '';
   
   if (state.notificationsEnabled) {
     notificationButton.classList.add("text-yellow-400");
-    notificationButton.innerHTML = enabledIcon;
+    notificationButton.appendChild(createEnabledBellIcon());
     notificationButton.title = "Notifications enabled - Click to disable";
   } else {
     notificationButton.classList.remove("text-yellow-400");
-    notificationButton.innerHTML = disabledIcon;
+    notificationButton.appendChild(createDisabledBellIcon());
     notificationButton.title = "Notifications disabled - Click to enable";
   }
 }
@@ -716,6 +862,7 @@ async function toggleBanUser() {
       
       await batch.commit();
       showToast(`User has been ${isBanned ? "UNBANNED" : "BANNED"}.`, "info");
+      
     } catch (e) {
       console.error('Ban error:', e);
       showToast(`Failed to ${action} user.`, "error");
@@ -745,20 +892,20 @@ async function initFirebase() {
       console.warn('App Check initialization failed:', appCheckError);
     }
 
-    state.db = getFirestore(state.app);
-    
+    // Use modern persistence API
     try {
-      await enableIndexedDbPersistence(state.db);
-    } catch (err) {
-      if (err.code === 'failed-precondition') {
-        console.warn('Persistence failed: Multiple tabs open');
-      } else if (err.code === 'unimplemented') {
-        console.warn('Persistence not available');
-      }
+      state.db = initializeFirestore(state.app, {
+        localCache: persistentLocalCache({
+          tabManager: persistentMultipleTabManager()
+        })
+      });
+    } catch (persistenceError) {
+      // Fallback if persistence fails
+      console.warn('Persistence initialization failed, using default:', persistenceError);
+      state.db = initializeFirestore(state.app, {});
     }
 
     state.auth = getAuth(state.app);
-
     onAuthStateChanged(state.auth, handleAuthStateChange);
 
   } catch (error) {
@@ -784,6 +931,7 @@ async function handleAuthStateChange(user) {
     registerServiceWorker();
     setupNotificationButton();
     setupAdminMenu();
+    setupConnectionMonitor();
 
     listenForUserProfiles();
     listenForBanStatus();
@@ -842,8 +990,9 @@ async function checkAdminStatus() {
  * Listen for pinned messages in current collection
  */
 function listenForPinnedMessages() {
-  if (unsubscribers.pinned) {
+  if (typeof unsubscribers.pinned === 'function') {
     unsubscribers.pinned();
+    unsubscribers.pinned = () => {};
   }
 
   const q = query(
@@ -856,7 +1005,7 @@ function listenForPinnedMessages() {
       doc.data().collection === state.currentPage
     );
 
-    if (matchingPin) {
+    if (matchingPin && pinnedMessageBar && pinnedMessageText) {
       const data = matchingPin.data();
       pinnedMessageBar.classList.remove("hidden");
       pinnedMessageBar.style.display = "flex";
@@ -873,13 +1022,15 @@ function listenForPinnedMessages() {
           }, 2000);
         }
       };
-    } else {
+    } else if (pinnedMessageBar) {
       pinnedMessageBar.classList.add("hidden");
       pinnedMessageBar.style.display = "none";
     }
   }, (error) => {
     console.warn("Pinned messages listener error:", error);
-    pinnedMessageBar.classList.add("hidden");
+    if (pinnedMessageBar) {
+      pinnedMessageBar.classList.add("hidden");
+    }
   });
 }
 
@@ -891,8 +1042,9 @@ function listenForPinnedMessages() {
  * Listen for ban status changes
  */
 function listenForBanStatus() {
-  if (unsubscribers.banCheck) {
+  if (typeof unsubscribers.banCheck === 'function') {
     unsubscribers.banCheck();
+    unsubscribers.banCheck = () => {};
   }
   
   if (!state.currentUserId || !state.db) return;
@@ -904,10 +1056,7 @@ function listenForBanStatus() {
         state.isBanned = true;
         state.userProfiles = {};
         
-        Object.values(unsubscribers).forEach(unsub => {
-          if (typeof unsub === 'function') unsub();
-        });
-        
+        cleanupAllListeners();
         showBannedScreen();
       }
     },
@@ -955,12 +1104,19 @@ function initScrollObserver() {
       updateScrollButton();
     });
   }, options);
+
+  // Add passive scroll listener for smoother scrolling
+  feedContainer?.addEventListener('scroll', () => {
+    // Additional scroll-based logic if needed
+  }, { passive: true });
 }
 
 /**
  * Update scroll to bottom button visibility
  */
 function updateScrollButton() {
+  if (!scrollToBottomBtn || !newMsgCount) return;
+  
   if (state.userIsAtBottom) {
     scrollToBottomBtn.classList.add("hidden");
     scrollToBottomBtn.style.display = "";
@@ -1001,8 +1157,9 @@ function scrollToBottom() {
  * Listen for user profile changes
  */
 function listenForUserProfiles() {
-  if (unsubscribers.userProfiles) {
+  if (typeof unsubscribers.userProfiles === 'function') {
     unsubscribers.userProfiles();
+    unsubscribers.userProfiles = () => {};
   }
 
   unsubscribers.userProfiles = onSnapshot(
@@ -1072,8 +1229,11 @@ async function handleProfileSave() {
     return;
   }
   
+  // Disable all modal buttons during save
   modalSaveButton.textContent = "CHECKING...";
   modalSaveButton.disabled = true;
+  modalCloseButton.disabled = true;
+  modalUsernameInput.disabled = true;
   modalSaveButton.classList.add("loading");
   
   try {
@@ -1092,9 +1252,6 @@ async function handleProfileSave() {
     
     if (isTaken) {
       showToast("Username is already taken!", "error");
-      modalSaveButton.textContent = "SAVE";
-      modalSaveButton.disabled = false;
-      modalSaveButton.classList.remove("loading");
       return;
     }
     
@@ -1119,6 +1276,8 @@ async function handleProfileSave() {
   } finally {
     modalSaveButton.textContent = "SAVE";
     modalSaveButton.disabled = false;
+    modalCloseButton.disabled = false;
+    modalUsernameInput.disabled = false;
     modalSaveButton.classList.remove("loading");
   }
 }
@@ -1205,6 +1364,7 @@ async function saveEdit() {
   
   editModalSaveButton.textContent = "SAVING...";
   editModalSaveButton.disabled = true;
+  editModalCancelButton.disabled = true;
   editModalSaveButton.classList.add("loading");
   
   try {
@@ -1220,6 +1380,7 @@ async function saveEdit() {
   } finally {
     editModalSaveButton.textContent = "SAVE";
     editModalSaveButton.disabled = false;
+    editModalCancelButton.disabled = false;
     editModalSaveButton.classList.remove("loading");
   }
 }
@@ -1350,6 +1511,11 @@ async function toggleReaction(docId, collectionName, reactionType, hasReacted) {
  */
 function showDropdownMenu(event, data) {
   event.stopPropagation();
+  
+  if (!contextMenu) {
+    console.warn('Context menu element not found');
+    return;
+  }
   
   if (contextMenu.classList.contains("is-open") && 
       state.currentContextMenuData?.id === data.id) {
@@ -1609,9 +1775,22 @@ function showPage(page) {
   if (state.isSelectionMode) exitSelectionMode();
   cancelReplyMode();
   
-  unsubscribers.confessions();
-  unsubscribers.chat();
-  unsubscribers.typingStatus();
+  // Clean up reaction pickers on page change
+  document.querySelectorAll(".reaction-picker").forEach(p => p.remove());
+  
+  // Properly clean up listeners
+  if (typeof unsubscribers.confessions === 'function') {
+    unsubscribers.confessions();
+    unsubscribers.confessions = () => {};
+  }
+  if (typeof unsubscribers.chat === 'function') {
+    unsubscribers.chat();
+    unsubscribers.chat = () => {};
+  }
+  if (typeof unsubscribers.typingStatus === 'function') {
+    unsubscribers.typingStatus();
+    unsubscribers.typingStatus = () => {};
+  }
   
   if (typingIndicator) typingIndicator.innerHTML = "&nbsp;";
   state.unreadMessages = 0;
@@ -1667,16 +1846,51 @@ function showPage(page) {
 // ============================================================
 
 /**
+ * Safe wrapper for renderFeed with error handling
+ * @param {Array} docs - Firestore documents
+ * @param {string} type - Collection type
+ * @param {Object} snapshot - Firestore snapshot
+ * @param {boolean} isRerender - Whether this is a re-render
+ * @param {boolean} isFirstSnapshot - Whether this is the first snapshot
+ */
+function safeRenderFeed(docs, type, snapshot, isRerender, isFirstSnapshot = false) {
+  try {
+    renderFeed(docs, type, snapshot, isRerender, isFirstSnapshot);
+  } catch (error) {
+    console.error('Render error:', error);
+    
+    if (feedContainer) {
+      feedContainer.innerHTML = '';
+      
+      const errorDiv = document.createElement("div");
+      errorDiv.className = "text-center p-4 text-red-500";
+      errorDiv.textContent = "Error rendering messages. Please refresh.";
+      
+      const retryBtn = document.createElement("button");
+      retryBtn.className = "mt-2 px-4 py-2 bg-white text-black rounded";
+      retryBtn.textContent = "Retry";
+      retryBtn.onclick = () => showPage(state.currentPage);
+      
+      feedContainer.appendChild(errorDiv);
+      feedContainer.appendChild(retryBtn);
+    }
+  }
+}
+
+/**
  * Listen for confessions
  * @param {boolean} isRerender - Whether this is a re-render
  */
 function listenForConfessions(isRerender = false) {
   if (isRerender) {
-    renderFeed(state.lastConfessionDocs, "confessions", null, true);
+    safeRenderFeed(state.lastConfessionDocs, "confessions", null, true);
     return;
   }
   
-  unsubscribers.chat();
+  if (typeof unsubscribers.chat === 'function') {
+    unsubscribers.chat();
+    unsubscribers.chat = () => {};
+  }
   
   if (feedContainer) {
     feedContainer.innerHTML = '';
@@ -1693,7 +1907,7 @@ function listenForConfessions(isRerender = false) {
     query(state.confessionsCollection, orderBy("timestamp", "asc")),
     (snapshot) => {
       state.lastConfessionDocs = snapshot.docs;
-      renderFeed(state.lastConfessionDocs, "confessions", snapshot, false, isFirstSnapshot);
+      safeRenderFeed(state.lastConfessionDocs, "confessions", snapshot, false, isFirstSnapshot);
       isFirstSnapshot = false;
     },
     (error) => {
@@ -1715,11 +1929,14 @@ function listenForConfessions(isRerender = false) {
  */
 function listenForChat(isRerender = false) {
   if (isRerender) {
-    renderFeed(state.lastChatDocs, "chat", null, true);
+    safeRenderFeed(state.lastChatDocs, "chat", null, true);
     return;
   }
   
-  unsubscribers.confessions();
+  if (typeof unsubscribers.confessions === 'function') {
+    unsubscribers.confessions();
+    unsubscribers.confessions = () => {};
+  }
   
   if (feedContainer) {
     feedContainer.innerHTML = '';
@@ -1736,7 +1953,7 @@ function listenForChat(isRerender = false) {
     query(state.chatCollection, orderBy("timestamp", "asc")),
     (snapshot) => {
       state.lastChatDocs = snapshot.docs;
-      renderFeed(state.lastChatDocs, "chat", snapshot, false, isFirstSnapshot);
+      safeRenderFeed(state.lastChatDocs, "chat", snapshot, false, isFirstSnapshot);
       isFirstSnapshot = false;
     },
     (error) => {
@@ -1753,9 +1970,14 @@ function listenForChat(isRerender = false) {
 }
 
 /**
- * Listen for typing status
+ * Listen for typing status with improved stale detection
  */
 function listenForTyping() {
+  if (typeof unsubscribers.typingStatus === 'function') {
+    unsubscribers.typingStatus();
+    unsubscribers.typingStatus = () => {};
+  }
+  
   unsubscribers.typingStatus = onSnapshot(
     state.typingStatusCollection, 
     (snapshot) => {
@@ -1764,11 +1986,19 @@ function listenForTyping() {
       
       snapshot.docs.forEach((docSnap) => {
         const data = docSnap.data();
-        if (data.isTyping && 
-            docSnap.id !== state.currentUserId && 
-            now - data.timestamp < 5000) {
-          const username = state.userProfiles[docSnap.id]?.username || "Someone";
-          typingUsers.push(username);
+        const userId = docSnap.id;
+        
+        // Skip self
+        if (userId === state.currentUserId) return;
+        
+        // Check if still typing and not stale
+        if (data.isTyping && data.timestamp) {
+          const timeSinceTyping = now - data.timestamp;
+          
+          if (timeSinceTyping < TYPING_STALE_THRESHOLD) {
+            const username = state.userProfiles[userId]?.username || "Someone";
+            typingUsers.push(username);
+          }
         }
       });
       
@@ -1777,13 +2007,18 @@ function listenForTyping() {
           typingIndicator.innerHTML = "&nbsp;";
         } else if (typingUsers.length === 1) {
           setTextSafely(typingIndicator, `${typingUsers[0]} is typing...`);
+        } else if (typingUsers.length === 2) {
+          setTextSafely(typingIndicator, `${typingUsers[0]} and ${typingUsers[1]} are typing...`);
         } else {
-          setTextSafely(typingIndicator, "Several users are typing...");
+          setTextSafely(typingIndicator, `${typingUsers.length} people are typing...`);
         }
       }
     },
     (error) => {
       console.warn("Typing listener error:", error);
+      if (typingIndicator) {
+        typingIndicator.innerHTML = "&nbsp;";
+      }
     }
   );
 }
@@ -1832,6 +2067,9 @@ const updateTypingStatus = debounce(async (isTyping) => {
 function renderFeed(docs, type, snapshot, isRerender, isFirstSnapshot = false) {
   if (!feedContainer) return;
   
+  // Clean up any floating reaction pickers
+  document.querySelectorAll(".reaction-picker").forEach(p => p.remove());
+  
   // Handle notifications for new messages
   if (!isRerender && snapshot) {
     snapshot.docChanges().forEach((change) => {
@@ -1871,7 +2109,7 @@ function renderFeed(docs, type, snapshot, isRerender, isFirstSnapshot = false) {
   let lastUserId = null;
   let lastDateString = null;
 
-    docs.forEach((docInstance) => {
+  docs.forEach((docInstance) => {
     const data = docInstance.data();
     
     // Skip hidden messages
@@ -1958,11 +2196,7 @@ function renderFeed(docs, type, snapshot, isRerender, isFirstSnapshot = false) {
     kebabBtn.type = "button";
     kebabBtn.className = "kebab-btn";
     kebabBtn.setAttribute("aria-label", "Message options");
-    kebabBtn.innerHTML = `
-      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" 
-           fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
-        <path d="M9.5 13a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm0-5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm0-5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z"/>
-      </svg>`;
+    kebabBtn.appendChild(createKebabIcon());
     kebabBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       showDropdownMenu(e, bubble.dataset);
@@ -2251,16 +2485,38 @@ async function postMessage(collectionRef, input) {
     }
   }
   
-  const text = input.value.trim();
-  
-  if (!isValidMessageText(text)) {
-    showToast("Message must be 1-2000 characters.", "error");
+  // Validate message with enhanced validation
+  const validation = validateMessageBeforePost(input.value);
+  if (!validation.valid) {
+    showToast(validation.error, "error");
     return;
   }
   
-  if (!text || !state.db) return;
+  const text = validation.text;
+  
+  if (!state.db) return;
+  
+  // Client-side rate limit check
+  const now = Date.now();
+  if (now - rateLimitState.lastMessageTime < RATE_LIMIT_MS) {
+    const remainingTime = Math.ceil((RATE_LIMIT_MS - (now - rateLimitState.lastMessageTime)) / 1000);
+    showToast(`Please wait ${remainingTime} second${remainingTime > 1 ? 's' : ''} before sending another message.`, "error");
+    return;
+  }
   
   input.disabled = true;
+  
+  // Add visual loading state
+  const submitBtn = collectionRef === state.chatCollection ? 
+    document.getElementById('chatButton') : 
+    document.getElementById('confessionButton');
+    
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.classList.add('loading');
+    const originalText = submitBtn.textContent;
+    submitBtn.textContent = 'SENDING...';
+  }
   
   try {
     const messageData = {
@@ -2283,6 +2539,8 @@ async function postMessage(collectionRef, input) {
       lastMessageAt: serverTimestamp()
     }, { merge: true });
 
+    rateLimitState.lastMessageTime = Date.now();
+    
     input.value = "";
     cancelReplyMode();
     updateTypingStatus(false);
@@ -2292,12 +2550,20 @@ async function postMessage(collectionRef, input) {
     console.error('Post error:', e);
     if (e.code === 'permission-denied') {
       showToast("Please wait a moment before sending another message.", "error");
+      rateLimitState.lastMessageTime = Date.now();
     } else {
       showToast("Failed to send message. Please try again.", "error");
     }
+  
   } finally {
     input.disabled = false;
     input.focus();
+    
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.classList.remove('loading');
+      submitBtn.textContent = collectionRef === state.chatCollection ? 'SEND' : 'POST';
+    }
   }
 }
 
@@ -2506,6 +2772,11 @@ window.addEventListener("beforeunload", () => {
   if (state.db && state.currentUserId) {
     updateTypingStatus(false);
   }
+});
+
+// Handle page unload - cleanup listeners
+window.addEventListener('unload', () => {
+  cleanupAllListeners();
 });
 
 // ============================================================

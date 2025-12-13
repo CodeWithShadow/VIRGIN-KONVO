@@ -18,6 +18,10 @@ module.exports = {
       fontFamily: {
         'inter': ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
       },
+       height: {
+        'dvh': '100dvh',
+        'svh': '100svh',
+      },
     },
   },
   plugins: [],

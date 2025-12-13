@@ -1,6 +1,6 @@
 // ============================================================
 // KONVO - ANONYMOUS CHAT APPLICATION
-// Version: 2.2 (Security & Performance Fixes)
+// Version: 2.3 (Character Counter + On-Demand Profile Loading)
 // ============================================================
 'use strict';
 
@@ -326,6 +326,10 @@ const elements = {
   chatForm: document.getElementById("chatForm"),
   chatInput: document.getElementById("chatInput"),
   
+  // Character Counters (NEW)
+  chatCharCount: document.getElementById("chatCharCount"),
+  confessionCharCount: document.getElementById("confessionCharCount"),
+  
   // Typing & Pinned
   typingIndicator: document.getElementById("typingIndicator"),
   pinnedMessageBar: document.getElementById("pinnedMessageBar"),
@@ -378,6 +382,7 @@ const elements = {
 const {
   feedContainer, loading, navConfessions, navChat,
   confessionForm, confessionInput, chatForm, chatInput,
+  chatCharCount, confessionCharCount,
   typingIndicator, pinnedMessageBar, pinnedMessageText,
   scrollToBottomBtn, newMsgCount, profileButton, notificationButton,
   profileModal, modalCloseButton, modalSaveButton, modalUsernameInput,
@@ -411,6 +416,10 @@ const state = {
   userProfiles: {},
   lastConfessionDocs: [],
   lastChatDocs: [],
+  
+  // Profile loading state (NEW - for on-demand loading)
+  pendingProfileLoads: new Set(),
+  profileLoadTimeout: null,
   
   // Collections
   confessionsCollection: null,
@@ -593,6 +602,42 @@ function cleanupAllListeners() {
       }
     }
   });
+}
+
+/**
+ * Update character counter for an input (NEW)
+ * @param {HTMLTextAreaElement} input - The textarea element
+ * @param {HTMLElement} counter - The counter element
+ */
+function updateCharacterCounter(input, counter) {
+  if (!input || !counter) return;
+  
+  const currentLength = input.value.length;
+  const maxLength = MESSAGE_MAX_LENGTH;
+  
+  // Update text
+  counter.textContent = `${currentLength}/${maxLength}`;
+  
+  // Show counter if there's content
+  if (currentLength > 0) {
+    counter.classList.add('visible');
+  } else {
+    counter.classList.remove('visible');
+  }
+  
+  // Remove all state classes first
+  counter.classList.remove('warning', 'danger', 'limit');
+  
+  // Add appropriate state class
+  if (currentLength >= maxLength) {
+    counter.classList.add('limit');
+  } else if (currentLength >= maxLength * 0.95) {
+    // 95%+ = danger (1900+ chars)
+    counter.classList.add('danger');
+  } else if (currentLength >= maxLength * 0.8) {
+    // 80%+ = warning (1600+ chars)
+    counter.classList.add('warning');
+  }
 }
 
 // ============================================================
@@ -1150,11 +1195,121 @@ function scrollToBottom() {
 }
 
 // ============================================================
-// USER PROFILES
+// USER PROFILES (UPDATED - On-Demand Loading)
 // ============================================================
 
 /**
- * Listen for user profile changes
+ * Request a user profile to be loaded (batched for efficiency)
+ * @param {string} userId - User ID to load
+ */
+function requestUserProfile(userId) {
+  if (!userId || typeof userId !== 'string') return;
+  
+  // Skip if already loaded
+  if (state.userProfiles[userId]) return;
+  
+  // Skip if already pending
+  if (state.pendingProfileLoads.has(userId)) return;
+  
+  // Add to pending queue
+  state.pendingProfileLoads.add(userId);
+  
+  // Debounce the actual loading (wait 100ms to batch requests)
+  if (state.profileLoadTimeout) {
+    clearTimeout(state.profileLoadTimeout);
+  }
+  
+  state.profileLoadTimeout = setTimeout(() => {
+    loadPendingProfiles();
+  }, 100);
+}
+
+/**
+ * Load all pending user profiles in a batch
+ */
+async function loadPendingProfiles() {
+  if (state.pendingProfileLoads.size === 0) return;
+  if (!state.db) return;
+  
+  // Get the pending user IDs and clear the queue
+  const userIds = Array.from(state.pendingProfileLoads);
+  state.pendingProfileLoads.clear();
+  
+  // Firestore "in" queries are limited to 30 items
+  // So we need to batch them
+  const batchSize = 30;
+  
+  for (let i = 0; i < userIds.length; i += batchSize) {
+    const batch = userIds.slice(i, i + batchSize);
+    
+    try {
+      const q = query(
+        collection(state.db, "users"),
+        where("__name__", "in", batch)
+      );
+      
+      const snapshot = await getDocs(q);
+      
+      snapshot.docs.forEach((docSnap) => {
+        state.userProfiles[docSnap.id] = docSnap.data();
+      });
+      
+    } catch (error) {
+      console.error("Error loading user profiles:", error);
+      
+      // On error, try loading individually
+      for (const userId of batch) {
+        try {
+          const docRef = doc(state.db, "users", userId);
+          const docSnap = await getDoc(docRef);
+          if (docSnap.exists()) {
+            state.userProfiles[docSnap.id] = docSnap.data();
+          }
+        } catch (e) {
+          console.warn(`Failed to load profile for ${userId}:`, e);
+        }
+      }
+    }
+  }
+  
+  // After loading, re-render to show the names
+  updateDisplayedUsernames();
+}
+
+/**
+ * Update displayed usernames after profiles are loaded
+ */
+function updateDisplayedUsernames() {
+  // Find all message bubbles and update their displayed usernames
+  document.querySelectorAll('.message-bubble').forEach((bubble) => {
+    const userId = bubble.dataset.userId;
+    if (!userId) return;
+    
+    const profile = state.userProfiles[userId];
+    if (!profile) return;
+    
+    const username = profile.username || "Anonymous";
+    
+    // Find the username element within this bubble
+    const usernameEl = bubble.querySelector('.font-bold.text-sm.opacity-90');
+    if (usernameEl && usernameEl.textContent !== username) {
+      usernameEl.textContent = username;
+    }
+    
+    // Also update the profile photo if needed
+    const imgEl = bubble.querySelector('.chat-pfp');
+    if (imgEl && profile.profilePhotoURL) {
+      const currentSrc = imgEl.getAttribute('src');
+      if (currentSrc !== profile.profilePhotoURL && isValidProfilePhotoURL(profile.profilePhotoURL)) {
+        imgEl.src = profile.profilePhotoURL;
+      }
+    }
+  });
+}
+
+/**
+ * Listen for user profile changes (only for profiles we've already loaded)
+ * This keeps cached profiles up-to-date without loading all users
  */
 function listenForUserProfiles() {
   if (typeof unsubscribers.userProfiles === 'function') {
@@ -1162,17 +1317,48 @@ function listenForUserProfiles() {
     unsubscribers.userProfiles = () => {};
   }
 
-  unsubscribers.userProfiles = onSnapshot(
-    collection(state.db, "users"), 
-    (snapshot) => {
-      snapshot.docs.forEach((docSnap) => {
-        state.userProfiles[docSnap.id] = docSnap.data();
-      });
-    },
-    (error) => {
-      console.error("User profiles listener error:", error);
+  // Only set up listener if we have some profiles loaded
+  // This listener will update profiles we already have
+  const checkAndSetupListener = () => {
+    const loadedUserIds = Object.keys(state.userProfiles);
+    
+    if (loadedUserIds.length === 0) {
+      // No profiles loaded yet, check again later
+      setTimeout(checkAndSetupListener, 2000);
+      return;
     }
-  );
+    
+    // Limit to first 30 users (Firestore "in" query limit)
+    const userIdsToWatch = loadedUserIds.slice(0, 30);
+    
+    try {
+      const q = query(
+        collection(state.db, "users"),
+        where("__name__", "in", userIdsToWatch)
+      );
+      
+      unsubscribers.userProfiles = onSnapshot(q, 
+        (snapshot) => {
+          snapshot.docChanges().forEach((change) => {
+            if (change.type === 'modified' || change.type === 'added') {
+              state.userProfiles[change.doc.id] = change.doc.data();
+            }
+          });
+          
+          // Update displayed usernames when profiles change
+          updateDisplayedUsernames();
+        },
+        (error) => {
+          console.error("User profiles listener error:", error);
+        }
+      );
+    } catch (e) {
+      console.error("Error setting up profile listener:", e);
+    }
+  };
+  
+  // Start checking after a short delay
+  setTimeout(checkAndSetupListener, 1000);
 }
 
 /**
@@ -1186,6 +1372,9 @@ async function loadUserProfile() {
     
     if (userDoc.exists()) {
       const data = userDoc.data();
+      
+      // Cache the profile
+      state.userProfiles[state.currentUserId] = data;
       
       if (data.banned) {
         showBannedScreen();
@@ -1267,6 +1456,13 @@ async function handleProfileSave() {
     
     state.currentUsername = inputVal;
     state.currentProfilePhotoURL = newProfilePhotoURL;
+    
+    // Update cached profile
+    state.userProfiles[state.currentUserId] = {
+      ...state.userProfiles[state.currentUserId],
+      username: inputVal,
+      profilePhotoURL: newProfilePhotoURL
+    };
     
     closeProfileModal();
     
@@ -2121,6 +2317,17 @@ function renderFeed(docs, type, snapshot, isRerender, isFirstSnapshot = false) {
     const messageDateObj = data.timestamp ? data.timestamp.toDate() : new Date();
     const messageDateStr = messageDateObj.toDateString();
 
+    // Request user profile if not loaded (NEW - on-demand loading)
+    const docUserId = data.userId;
+    if (docUserId && !state.userProfiles[docUserId]) {
+      requestUserProfile(docUserId);
+    }
+    
+    // Also request profile for reply author if exists
+    if (data.replyTo?.userId && !state.userProfiles[data.replyTo.userId]) {
+      requestUserProfile(data.replyTo.userId);
+    }
+
     // Date separator
     if (lastDateString !== messageDateStr) {
       const sepDiv = document.createElement('div');
@@ -2133,7 +2340,6 @@ function renderFeed(docs, type, snapshot, isRerender, isFirstSnapshot = false) {
       lastUserId = null;
     }
 
-    const docUserId = data.userId;
     const profile = state.userProfiles[docUserId] || {};
     const username = profile.username || "Anonymous";
     const firstChar = (username[0] || "?").toUpperCase();
@@ -2546,6 +2752,10 @@ async function postMessage(collectionRef, input) {
     updateTypingStatus(false);
     scrollToBottom();
     
+    // Reset character counter (NEW)
+    const counter = input === chatInput ? chatCharCount : confessionCharCount;
+    updateCharacterCounter(input, counter);
+    
   } catch (e) {
     console.error('Post error:', e);
     if (e.code === 'permission-denied') {
@@ -2711,7 +2921,7 @@ selectionCancel?.addEventListener("click", exitSelectionMode);
 selectionDelete?.addEventListener("click", handleMultiDelete);
 cancelReply?.addEventListener("click", cancelReplyMode);
 
-// Input handlers
+// Input handlers with character counter (UPDATED)
 confessionInput?.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
@@ -2730,12 +2940,15 @@ chatInput?.addEventListener("keydown", (e) => {
   }
 });
 
+// Input event listeners with character counter (UPDATED)
 chatInput?.addEventListener("input", () => {
   updateTypingStatus(true);
+  updateCharacterCounter(chatInput, chatCharCount);
 });
 
 confessionInput?.addEventListener("input", () => {
   updateTypingStatus(true);
+  updateCharacterCounter(confessionInput, confessionCharCount);
 });
 
 // Escape key handler

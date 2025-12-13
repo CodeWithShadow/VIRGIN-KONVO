@@ -242,56 +242,74 @@
       </div>
 
       <!-- Confession Form -->
-      <form 
-        id="confessionForm" 
-        class="hidden gap-3 border-t border-[#333]"
-        aria-label="Post a confession"
-      >
-        <label for="confessionInput" class="sr-only">Type your confession</label>
-        <textarea
-          id="confessionInput"
-          rows="1"
-          class="flex-1 resize-none focus:outline-none text-sm"
-          placeholder="Type your confession..."
-          required
-          maxlength="2000"
-          autocomplete="off"
-          spellcheck="true"
-        ></textarea>
-        <button
-          id="confessionButton"
-          type="submit"
-          class="px-5 py-2 rounded-lg font-bold text-sm bg-white text-black hover:bg-[#cccccc] transition focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-white"
-        >
-          POST
-        </button>
-      </form>
+<form 
+  id="confessionForm" 
+  class="hidden gap-3 border-t border-[#333] relative"
+  aria-label="Post a confession"
+>
+  <label for="confessionInput" class="sr-only">Type your confession</label>
+  <textarea
+    id="confessionInput"
+    rows="1"
+    class="flex-1 resize-none focus:outline-none text-sm pr-16"
+    placeholder="Type your confession..."
+    required
+    maxlength="2000"
+    autocomplete="off"
+    spellcheck="true"
+  ></textarea>
+  
+  <!-- Character Counter -->
+  <span 
+    id="confessionCharCount" 
+    class="char-counter"
+    aria-live="polite"
+    aria-label="Character count"
+  >0/2000</span>
+  
+  <button
+    id="confessionButton"
+    type="submit"
+    class="px-5 py-2 rounded-lg font-bold text-sm bg-white text-black hover:bg-[#cccccc] transition focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-white"
+  >
+    POST
+  </button>
+</form>
 
       <!-- Chat Form -->
       <form 
-        id="chatForm" 
-        class="flex gap-3 border-t border-[#333]"
-        aria-label="Send a message"
-      >
-        <label for="chatInput" class="sr-only">Type a message</label>
-        <textarea
-          id="chatInput"
-          rows="1"
-          class="flex-1 resize-none focus:outline-none text-sm"
-          placeholder="Type a message..."
-          required
-          maxlength="2000"
-          autocomplete="off"
-          spellcheck="true"
-        ></textarea>
-        <button
-          id="chatButton"
-          type="submit"
-          class="px-5 py-2 rounded-lg font-bold text-sm bg-white text-black hover:bg-[#cccccc] transition focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-white"
-        >
-          SEND
-        </button>
-      </form>
+      id="chatForm" 
+      class="flex gap-3 border-t border-[#333] relative"
+      aria-label="Send a message"
+>
+      <label for="chatInput" class="sr-only">Type a message</label>
+      <textarea
+      id="chatInput"
+      rows="1"
+      class="flex-1 resize-none focus:outline-none text-sm pr-16"
+      placeholder="Type a message..."
+      required
+      maxlength="2000"
+      autocomplete="off"
+      spellcheck="true"
+      ></textarea>
+  
+    <!-- Character Counter -->
+    <span 
+     id="chatCharCount" 
+     class="char-counter"
+     aria-live="polite"
+     aria-label="Character count"
+    >0/2000</span>
+  
+  <button
+    id="chatButton"
+    type="submit"
+    class="px-5 py-2 rounded-lg font-bold text-sm bg-white text-black hover:bg-[#cccccc] transition focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-white"
+  >
+    SEND
+  </button>
+</form>
     </main>
 
     <!-- Profile Modal -->

@@ -1228,3 +1228,46 @@ body.selection-mode .message-bubble {
     color-scheme: dark;
   }
 }
+
+/* ============================
+   32. CHARACTER COUNTER
+   ============================ */
+
+.char-counter {
+  position: absolute;
+  right: 80px;
+  bottom: 50%;
+  transform: translateY(50%);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-weight: 500;
+  pointer-events: none;
+  user-select: none;
+  transition: color 0.2s ease;
+  opacity: 0;
+}
+
+/* Show counter when input is focused or has content */
+#chatForm:focus-within .char-counter,
+#confessionForm:focus-within .char-counter,
+.char-counter.visible {
+  opacity: 1;
+}
+
+/* Warning state - approaching limit */
+.char-counter.warning {
+  color: var(--warning);
+}
+
+/* Danger state - near limit */
+.char-counter.danger {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+/* At limit */
+.char-counter.limit {
+  color: var(--danger);
+  font-weight: 700;
+  animation: systemPulse 0.5s ease-in-out infinite;
+}
